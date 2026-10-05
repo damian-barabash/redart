@@ -52,7 +52,7 @@ const beamFragment = /* glsl */ `
 
 type View = { width: number; height: number }
 const fixtureSize = (v: View) => Math.min(v.height * 0.3, v.width * 0.19)
-const trussY = (v: View) => v.height / 2 - fixtureSize(v) * 0.16
+const trussY = (v: View) => v.height / 2 - fixtureSize(v) * 0.22
 
 const _v = new THREE.Vector3()
 const _box = new THREE.Box3()
@@ -141,19 +141,23 @@ function Fixture({ def, pointer, target }: { def: FixtureDef; pointer: React.Ref
     beam.userData.fx = glow.userData.fx = true
     tilt.add(beam, glow)
 
-    return { scene, pan, tilt, k, offset, lens, uniforms, glow, pan0: 0, tilt0: 0, appear: 0 }
+    return { scene, pan, tilt, k, offset, lens, uniforms, glow, pan0: 0, tilt0: 0, yaw: 0, appear: 0 }
   }, [gltf, def])
 
   // rozmiar i miejsce urządzenia liczone z widocznego kadru (canvas wystaje poza kartę z wideo)
   const s = fixtureSize(viewport)
   const x = def.side * (viewport.width / 2 - s * (def.row === 1 ? 0.95 : 0.6))
-  const y = def.row === 1 ? trussY(viewport) : -viewport.height / 2 + s * 0.03
+  const y = def.row === 1 ? trussY(viewport) : -viewport.height / 2 + s * 0.09
 
   useFrame((state, dt) => {
     const { pan, tilt, uniforms } = rig
     const ease = 1 - Math.exp(-dt * 5)
     rig.appear += (1 - rig.appear) * (1 - Math.exp(-dt * 2.2))
     root.current.scale.setScalar(s * (0.86 + 0.14 * rig.appear))
+    // paralaksa: każde urządzenie obraca się wokół własnej osi (widać bryłę), ale nie zmienia miejsca
+    const live = performance.now() - pointer.current.at <= 2600
+    rig.yaw += ((live ? pointer.current.x * 0.45 : 0) - rig.yaw) * (1 - Math.exp(-dt * 3))
+    root.current.rotation.y = def.yaw + rig.yaw
 
     // cel: logo + odchyłka każdej lampy, żeby plamy światła nie pokrywały się idealnie
     const t = state.clock.elapsedTime
@@ -213,11 +217,10 @@ function Rig({ pointer, onAim }: { pointer: React.RefObject<Pointer>; onAim?: (x
     const ease = 1 - Math.exp(-dt * 3)
     const px = idle ? 0 : p.x
     const py = idle ? 0 : p.y
-    // lampy śledzą kursor w okolicy logo, cały zestaw lekko obraca się za myszą (paralaksa = widać, że to 3D)
-    target.x += (px * viewport.width * 0.2 - target.x) * ease
-    target.y += (py * viewport.height * 0.16 - target.y) * ease
-    group.current.rotation.y += (px * 0.2 - group.current.rotation.y) * ease
-    group.current.rotation.x += (-py * 0.1 - group.current.rotation.x) * ease
+    // lampy śledzą kursor w okolicy logo; sama belka stoi w miejscu, żeby nic nie wychodziło poza kadr canvasu
+    target.x += (px * viewport.width * 0.12 - target.x) * ease
+    // w dół cel prawie się nie rusza: pod logo są przyciski, wiązki mają je omijać
+    target.y += (py * viewport.height * (py > 0 ? 0.14 : 0.03) - target.y) * ease
     onAim?.(target.x / viewport.width, target.y / viewport.height)
   })
 

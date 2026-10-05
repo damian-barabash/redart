@@ -24,8 +24,8 @@ export function Hero() {
     const el = stage.current!
     const move = (e: PointerEvent) => {
       const r = el.getBoundingClientRect()
-      pointer.current.x = Math.max(-1.4, Math.min(1.4, ((e.clientX - r.left) / r.width) * 2 - 1))
-      pointer.current.y = Math.max(-1.4, Math.min(1.4, -(((e.clientY - r.top) / r.height) * 2 - 1)))
+      pointer.current.x = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1))
+      pointer.current.y = Math.max(-1, Math.min(1, -(((e.clientY - r.top) / r.height) * 2 - 1)))
       pointer.current.at = performance.now()
     }
     window.addEventListener('pointermove', move, { passive: true })
