@@ -27,7 +27,7 @@ function ArtistSlider() {
   return (
     <section className="section artists">
       <div className="wrap">
-        <SectionHead title={<>Nasi <em>artyści</em></>} sub="Management i booking koncertów" to="/artysci" more="Wszyscy artyści" />
+        <SectionHead title={<>Nasi <em>artyści</em></>} sub="02 — Management i booking koncertów" to="/artysci" more="Wszyscy artyści" />
       </div>
       <div className="artists__track rv" ref={track} onScroll={onScroll}>
         {artists.map((a, i) => {
@@ -107,11 +107,19 @@ export default function Home() {
     <>
       <Hero />
 
+      <div className="marquee" aria-hidden="true">
+        <div className="marquee__track">
+          {[...about.scope, ...about.scope, ...about.scope, ...about.scope].map((s, i) => (
+            <span key={i}>{s}</span>
+          ))}
+        </div>
+      </div>
+
       <section className="section about">
         <div className="wrap">
           <div className="about__head rv">
-            <h2 className="shead__title">O <em>nas</em></h2>
-            <p className="shead__sub">Scena, którą znamy od podszewki</p>
+            <p className="eyebrow">01 — redART</p>
+            <h2 className="shead__title">Scena, którą znamy <em>od 1996 roku</em></h2>
           </div>
           <div className="about__cols rv">
             <p>{about.lead}</p>
@@ -141,7 +149,7 @@ export default function Home() {
 
       <section className="section">
         <div className="wrap">
-          <SectionHead title={<>Kalendarz <em>eventów</em></>} sub="Wybrane koncerty i wydarzenia" to="/eventy" more="Wszystkie eventy" />
+          <SectionHead title={<>Kalendarz <em>eventów</em></>} sub="03 — Wybrane koncerty i wydarzenia" to="/eventy" more="Wszystkie eventy" />
           <EventRows limit={6} />
         </div>
       </section>
@@ -149,7 +157,7 @@ export default function Home() {
       <section className="section">
         <div className="wrap rental">
           <div className="rental__main rv">
-            <p className="eyebrow">Rental</p>
+            <p className="eyebrow">04 — Rental</p>
             <h2>{rentalTeaser.title}</h2>
             {rentalTeaser.lines.map((l) => (
               <p key={l}>{l}</p>
@@ -189,7 +197,7 @@ export default function Home() {
 
       <section className="section">
         <div className="wrap">
-          <SectionHead title={<>Galeria <em>realizacji</em></>} sub="Zdjęcia z naszych wydarzeń" to="/galeria" more="Wszystkie galerie" />
+          <SectionHead title={<>Galeria <em>realizacji</em></>} sub="05 — Zdjęcia z naszych wydarzeń" to="/galeria" more="Wszystkie galerie" />
           <div className="gtiles">
             {galleries.map((g, i) => (
               <Link key={g.slug} to={`/galeria/${g.slug}`} className="gtile rv" style={{ transitionDelay: `${i * 70}ms` }}>
@@ -208,7 +216,7 @@ export default function Home() {
         <div className="wrap">
           <div className="news rv">
             <div>
-              <p className="eyebrow">Wiadomości</p>
+              <p className="eyebrow">06 — Wiadomości</p>
               <h2>
                 Bieżące informacje publikujemy <em>na Facebooku</em>
               </h2>

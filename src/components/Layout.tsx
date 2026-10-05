@@ -31,7 +31,7 @@ function Header() {
     <header className={`header${scrolled ? ' is-scrolled' : ''}`}>
       <div className="wrap header__in">
         <Link to="/" className="header__logo" aria-label="redART Events — strona główna">
-          <Logo />
+          <Logo tone="dark" />
         </Link>
         <nav className="header__nav" aria-label="Główna nawigacja">
           {nav.map((n) => (

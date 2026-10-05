@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f1f1ef" />
+    <meta name="theme-color" content="#0b0b0d" />
     <title>redART Events | Profesjonalna organizacja wydarzeń artystycznych</title>
     <meta name="description" content="redART Events — od 1996 roku organizujemy koncerty, festiwale, dni miast i produkcje telewizyjne. Management artystów i wypożyczalnia sprzętu scenicznego." />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
@@ -14,7 +14,7 @@
     <style>
       /* Preloader: w index.html, żeby był widoczny zanim załaduje się JS. --s skaluje czas (krócej przy kolejnych wejściach). */
       html.is-loading { overflow: hidden; }
-      .pl { position: fixed; inset: 0; z-index: 100; --s: 1; --e: cubic-bezier(0.2, 0.8, 0.1, 1); font-family: 'Montserrat Variable', 'Helvetica Neue', Arial, sans-serif; }
+      .pl { position: fixed; inset: 0; z-index: 100; --s: 1; --e: cubic-bezier(0.2, 0.8, 0.1, 1); font-family: 'Oswald Variable', 'Arial Narrow', Arial, sans-serif; }
       .pl--fast { --s: 0.55; }
       .pl__red, .pl__panel { position: absolute; inset: 0; transition: transform 0.95s cubic-bezier(0.76, 0, 0.18, 1); }
       .pl__red { background: #ed1c24; transition-delay: 0.14s; }
@@ -34,9 +34,9 @@
       .pl__l--red { --y: 10px; animation-delay: calc(var(--s) * (0.72s + var(--i) * 0.07s)); }
       .pl__l--art { --y: 26px; animation-delay: calc(var(--s) * (0.92s + var(--i) * 0.09s)); }
       .pl__l--ev { --x: 12px; animation-delay: calc(var(--s) * (1.2s + var(--i) * 0.05s)); }
-      .pl__foot { position: absolute; left: clamp(18px, 4vw, 56px); right: clamp(18px, 4vw, 56px); bottom: clamp(18px, 4vw, 44px); display: grid; grid-template-columns: auto 1fr auto; align-items: end; gap: 20px; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); transition: opacity 0.3s; }
+      .pl__foot { font-family: 'Inter Variable', Arial, sans-serif; position: absolute; left: clamp(18px, 4vw, 56px); right: clamp(18px, 4vw, 56px); bottom: clamp(18px, 4vw, 44px); display: grid; grid-template-columns: auto 1fr auto; align-items: end; gap: 20px; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); transition: opacity 0.3s; }
       .pl.is-out .pl__foot { opacity: 0; }
-      .pl__n { min-width: 2.2ch; font-size: clamp(2.6rem, 7vw, 5.4rem); font-weight: 800; line-height: 0.8; letter-spacing: -0.05em; color: #fff; font-variant-numeric: tabular-nums; }
+      .pl__n { font-family: 'Oswald Variable', 'Arial Narrow', Arial, sans-serif; min-width: 2.2ch; font-size: clamp(2.6rem, 7vw, 5.4rem); font-weight: 600; line-height: 0.8; color: #fff; font-variant-numeric: tabular-nums; }
       .pl__bar { height: 2px; margin-bottom: 6px; background: rgba(255, 255, 255, 0.16); }
       .pl__bar i { display: block; height: 100%; background: #ed1c24; transform: scaleX(0); transform-origin: left; }
       @keyframes pl-fade { to { opacity: 1; } }

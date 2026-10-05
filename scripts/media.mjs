@@ -68,8 +68,69 @@ const jobs = [
     ['Martin-MAC-Aura-PXL-5D.jpg', 'martin-mac-aura-pxl'], ['MDG-atme.png', 'mdg-atme'],
     ['Robe-Pointe.jpg', 'robe-pointe'], ['Sunstripe-Showtec-MK-II.jpg', 'sunstrip-showtec-mk2'],
     ['Martin-McAura-Xip.png', 'martin-mac-aura-xip'],
-  ].map(([f, n]) => [`${RENTAL}/${f}`, `rental/${n}`, { max: 1200 }]),
+  ].map(([f, n]) => [`${RENTAL}/${f}`, `rental/${n}`, { max: 1200, cut: true }]),
 ]
+
+// Zdjęcia sprzętu mają białe tło — na ciemnej stronie wycinamy je do przezroczystości.
+// Zalewanie od krawędzi: znika tylko biel połączona z brzegiem kadru, jasne elementy urządzenia zostają.
+async function cutWhite(src, max) {
+  const { data, info } = await sharp(src, { failOn: 'none' }).rotate()
+    .resize({ width: max, height: max, fit: 'inside', withoutEnlargement: true })
+    .ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const { width: w, height: h } = info
+  const light = (i) => data[i * 4 + 3] < 8 || Math.min(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) >= 236
+  const bg = new Uint8Array(w * h)
+  const stack = []
+  const push = (x, y) => {
+    const i = y * w + x
+    if (x < 0 || y < 0 || x >= w || y >= h || bg[i] || !light(i)) return
+    bg[i] = 1
+    stack.push(i)
+  }
+  for (let x = 0; x < w; x++) (push(x, 0), push(x, h - 1))
+  for (let y = 0; y < h; y++) (push(0, y), push(w - 1, y))
+  while (stack.length) {
+    const i = stack.pop()
+    const x = i % w
+    const y = (i - x) / w
+    push(x + 1, y), push(x - 1, y), push(x, y + 1), push(x, y - 1)
+  }
+  // spójne obszary (4-sąsiedztwo) pikseli spełniających warunek
+  const regions = (test) => {
+    const seen = new Uint8Array(w * h)
+    const out = []
+    for (let start = 0; start < w * h; start++) {
+      if (seen[start] || !test(start)) continue
+      const px = [start]
+      seen[start] = 1
+      for (let k = 0; k < px.length; k++) {
+        const i = px[k]
+        const x = i % w
+        for (const j of [x + 1 < w ? i + 1 : -1, x > 0 ? i - 1 : -1, i + w < w * h ? i + w : -1, i - w]) {
+          if (j < 0 || seen[j] || !test(j)) continue
+          seen[j] = 1
+          px.push(j)
+        }
+      }
+      out.push(px)
+    }
+    return out
+  }
+  // biel zamknięta wewnątrz urządzenia (prześwit jarzma): duże, czysto białe plamy też są tłem
+  const white = (i) => !bg[i] && Math.min(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) >= 247
+  for (const px of regions(white)) if (px.length > w * h * 0.0012) for (const i of px) bg[i] = 1
+  // śmieci ze źródeł (linie ramek, podpisy producenta): zostaje tylko główna bryła i to, co ma ≥ 6% jej pola
+  const solid = regions((i) => !bg[i])
+  const biggest = Math.max(...solid.map((r) => r.length))
+  for (const px of solid) if (px.length < biggest * 0.06) for (const i of px) bg[i] = 1
+
+  // maska: tło = 0; lekko zmiękczona i cofnięta o ~1 px, żeby nie został jasny obrys
+  const mask = Buffer.alloc(w * h)
+  for (let i = 0; i < w * h; i++) mask[i] = bg[i] ? 0 : 255
+  const soft = await sharp(mask, { raw: { width: w, height: h, channels: 1 } }).blur(1.1).linear(1.9, -115).extractChannel(0).raw().toBuffer() // extractChannel: sharp na wyjściu rozwija szarość do RGB
+  for (let i = 0; i < w * h; i++) data[i * 4 + 3] = Math.min(data[i * 4 + 3], soft[i])
+  return sharp(data, { raw: { width: w, height: h, channels: 4 } }).trim()
+}
 
 const manifest = {}
 let inBytes = 0
@@ -78,11 +139,20 @@ for (const [src, name, opt = {}] of jobs) {
   const max = opt.max ?? 1600
   const out = path.join(OUT, `${name}.webp`)
   fs.mkdirSync(path.dirname(out), { recursive: true })
-  const base = sharp(src, { failOn: 'none' }).rotate().resize({ width: max, height: max, fit: 'inside', withoutEnlargement: true })
-  const info = await base.clone().webp(opt.lossless ? { lossless: true } : { quality: 78, effort: 6 }).toFile(out)
   const sm = path.join(OUT, `${name}-sm.webp`)
-  await sharp(src, { failOn: 'none' }).rotate().resize({ width: 640, height: 640, fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 72, effort: 6 }).toFile(sm)
+  let info
+  if (opt.cut) {
+    // trim() i resize() rozdzielamy przez bufor — sharp wykonuje resize przed trim niezależnie od kolejności wywołań
+    const cut = await (await cutWhite(src, max)).png().toBuffer()
+    info = await sharp(cut).webp({ quality: 84, alphaQuality: 90, effort: 6 }).toFile(out)
+    await sharp(cut).resize({ width: 640, height: 640, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 80, alphaQuality: 90, effort: 6 }).toFile(sm)
+  } else {
+    const base = sharp(src, { failOn: 'none' }).rotate().resize({ width: max, height: max, fit: 'inside', withoutEnlargement: true })
+    info = await base.clone().webp(opt.lossless ? { lossless: true } : { quality: 78, effort: 6 }).toFile(out)
+    await sharp(src, { failOn: 'none' }).rotate().resize({ width: 640, height: 640, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 72, effort: 6 }).toFile(sm)
+  }
   manifest[name] = { w: info.width, h: info.height }
   inBytes += fs.statSync(src).size
   outBytes += info.size + fs.statSync(sm).size

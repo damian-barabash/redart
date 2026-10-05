@@ -6,26 +6,22 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { asset } from '../../lib/asset'
 
-// Wskaźnik w układzie sceny: x,y ∈ [-1,1] względem karty z wideo; `at` — czas ostatniego ruchu.
+// Cel wiązek leży PRZED belką (bliżej kamery): głowy odwracają się soczewkami do widza, a nie tyłem.
+// Żeby na ekranie wiązki dalej schodziły się na logo, współrzędne celu skalujemy perspektywą (AIM_K).
+const CAM_Z = 9
+const AIM_Z = 1.7
+const AIM_K = (CAM_Z - AIM_Z) / CAM_Z
+
+// Wskaźnik w układzie hero: x,y ∈ [-1,1]; `at` — czas ostatniego ruchu.
 export type Pointer = { x: number; y: number; at: number }
 
-type FixtureDef = {
-  model: string
-  color: string
-  /** pozycja względem krawędzi kadru: -1 lewa / 1 prawa, 1 góra (wisi) / -1 dół (stoi) */
-  side: -1 | 1
-  row: -1 | 1
-  yaw: number
-  spread: number
-  intensity: number
-}
+// Rząd reflektorów podwieszonych na belce. Liczba zależy od szerokości kadru (px).
+const fixtureCount = (px: number) => (px >= 1100 ? 10 : px >= 700 ? 7 : 5)
+const MODELS = ['aura', 'pointe', 'beam-red', 'wash37'] as const
+const WHITE = ['#fff4e6', '#eef3ff']
+const RED = '#ff2a33'
 
-const FIXTURES: FixtureDef[] = [
-  { model: 'wash37', color: '#fff4e6', side: -1, row: 1, yaw: 0.5, spread: 0.16, intensity: 0.34 },
-  { model: 'aura', color: '#eef3ff', side: 1, row: 1, yaw: -0.5, spread: 0.18, intensity: 0.34 },
-  { model: 'beam-red', color: '#ff2a33', side: -1, row: -1, yaw: 0.35, spread: 0.09, intensity: 0.62 },
-  { model: 'pointe', color: '#ff2a33', side: 1, row: -1, yaw: -0.35, spread: 0.08, intensity: 0.62 },
-]
+type FixtureDef = { model: string; color: string; red: boolean; yaw: number; slot: number; count: number }
 
 const beamVertex = /* glsl */ `
   uniform float uLen; uniform float uR0; uniform float uR1;
@@ -51,8 +47,8 @@ const beamFragment = /* glsl */ `
 `
 
 type View = { width: number; height: number }
-const fixtureSize = (v: View) => Math.min(v.height * 0.3, v.width * 0.19)
-const trussY = (v: View) => v.height / 2 - fixtureSize(v) * 0.22
+const fixtureSize = (v: View, n: number) => Math.min(v.height * 0.2, (v.width * 0.96) / (n * 1.08))
+const trussY = (v: View, n: number) => v.height / 2 - fixtureSize(v, n) * 0.2
 
 const _v = new THREE.Vector3()
 const _box = new THREE.Box3()
@@ -64,13 +60,10 @@ function Fixture({ def, pointer, target }: { def: FixtureDef; pointer: React.Ref
   const viewport = useThree((s) => s.viewport)
 
   const rig = useMemo(() => {
-    const scene = gltf.scene
+    // ten sam model wisi kilka razy: klon dzieli geometrię i materiały, ma własne węzły pan/tilt
+    const scene = gltf.scene.clone(true)
     const pan = scene.getObjectByName('pan')!
     const tilt = scene.getObjectByName('tilt')!
-    // pomiar w układzie własnym modelu: useMemo może odpalić się ponownie, gdy scena jest już podpięta i przeskalowana
-    scene.removeFromParent()
-    scene.position.set(0, 0, 0)
-    tilt.remove(...tilt.children.filter((c) => c.userData.fx))
     tilt.rotation.set(0, 0, 0)
     pan.rotation.set(0, 0, 0)
     scene.updateMatrixWorld(true)
@@ -97,9 +90,10 @@ function Fixture({ def, pointer, target }: { def: FixtureDef; pointer: React.Ref
 
     scene.traverse((o) => {
       const mat = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
-      if (!mat || !('emissive' in mat)) return
+      if (!mat || !('emissive' in mat) || mat.userData.tuned) return
+      mat.userData.tuned = true // materiały są wspólne dla klonów — podbijamy tylko raz
       if (mat.emissive.getHex() !== 0) mat.emissiveIntensity = Math.max(mat.emissiveIntensity, 0.6) * 3.2
-      mat.envMapIntensity = 1.15
+      mat.envMapIntensity = 1.6
     })
 
     const uniforms = {
@@ -109,7 +103,7 @@ function Fixture({ def, pointer, target }: { def: FixtureDef; pointer: React.Ref
       uColor: { value: new THREE.Color(def.color) },
       uIntensity: { value: 0 },
     }
-    const geo = new THREE.CylinderGeometry(1, 1, 1, 48, 1, true)
+    const geo = new THREE.CylinderGeometry(1, 1, 1, 40, 1, true)
     geo.rotateX(Math.PI / 2).translate(0, 0, 0.5)
     const beam = new THREE.Mesh(
       geo,
@@ -133,38 +127,48 @@ function Fixture({ def, pointer, target }: { def: FixtureDef; pointer: React.Ref
     beam.renderOrder = 2
 
     // świecąca soczewka
-    const glow = new THREE.Mesh(
-      new THREE.CircleGeometry(r0 * 1.15, 40),
-      new THREE.MeshBasicMaterial({ color: def.color, toneMapped: false, transparent: true, opacity: 0 }),
-    )
+    const glowMat = new THREE.MeshBasicMaterial({ color: def.color, toneMapped: false, transparent: true, opacity: 0 })
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(r0 * 1.15, 32), glowMat)
     glow.position.copy(lens).z += hs.z * 0.004
-    beam.userData.fx = glow.userData.fx = true
     tilt.add(beam, glow)
 
-    return { scene, pan, tilt, k, offset, lens, uniforms, glow, pan0: 0, tilt0: 0, yaw: 0, appear: 0 }
+    return { scene, pan, tilt, k, offset, uniforms, beam, glow, glowMat, pan0: 0, tilt0: 0, yaw: 0, appear: 0 }
   }, [gltf, def])
 
-  // rozmiar i miejsce urządzenia liczone z widocznego kadru (canvas wystaje poza kartę z wideo)
-  const s = fixtureSize(viewport)
-  const x = def.side * (viewport.width / 2 - s * (def.row === 1 ? 0.95 : 0.6))
-  const y = def.row === 1 ? trussY(viewport) : -viewport.height / 2 + s * 0.09
+  useEffect(
+    () => () => {
+      for (const m of [rig.beam, rig.glow]) {
+        m.geometry.dispose()
+        ;(m.material as THREE.Material).dispose()
+      }
+    },
+    [rig],
+  )
+
+  const { slot, count } = def
+  const s = fixtureSize(viewport, count)
+  const mid = (count - 1) / 2
+  const x = ((slot - mid) * viewport.width * 0.94) / count
+  const y = trussY(viewport, count)
 
   useFrame((state, dt) => {
     const { pan, tilt, uniforms } = rig
     const ease = 1 - Math.exp(-dt * 5)
-    rig.appear += (1 - rig.appear) * (1 - Math.exp(-dt * 2.2))
-    root.current.scale.setScalar(s * (0.86 + 0.14 * rig.appear))
+    // lampy zapalają się po kolei od środka belki
+    const delay = Math.abs(slot - mid) * 0.12
+    if (state.clock.elapsedTime > delay) rig.appear += (1 - rig.appear) * (1 - Math.exp(-dt * 2.2))
+    root.current.scale.setScalar(s * (0.9 + 0.1 * rig.appear))
+
     // paralaksa: każde urządzenie obraca się wokół własnej osi (widać bryłę), ale nie zmienia miejsca
     const live = performance.now() - pointer.current.at <= 2600
-    rig.yaw += ((live ? pointer.current.x * 0.45 : 0) - rig.yaw) * (1 - Math.exp(-dt * 3))
+    rig.yaw += ((live ? pointer.current.x * 0.5 : 0) - rig.yaw) * (1 - Math.exp(-dt * 3))
     root.current.rotation.y = def.yaw + rig.yaw
 
-    // cel: logo + odchyłka każdej lampy, żeby plamy światła nie pokrywały się idealnie
+    // cel: logo; wiązki układają się w wachlarz (każda celuje trochę w swoją stronę znaku)
     const t = state.clock.elapsedTime
-    const idle = performance.now() - pointer.current.at > 2600
     _v.copy(target)
-    _v.x += def.side * 0.12 * viewport.width * 0.1 + (idle ? Math.sin(t * 0.5 + def.side + def.row) * viewport.width * 0.05 : 0)
-    _v.y += idle ? Math.cos(t * 0.7 + def.row * 2 + def.side) * viewport.height * 0.035 : 0
+    _v.x += x * 0.1 + (live ? 0 : Math.sin(t * 0.5 + slot * 0.9) * viewport.width * 0.035)
+    _v.y += live ? 0 : Math.cos(t * 0.7 + slot * 1.7) * viewport.height * 0.02
 
     pan.parent!.worldToLocal(_v)
     _v.sub(pan.position)
@@ -177,15 +181,15 @@ function Fixture({ def, pointer, target }: { def: FixtureDef; pointer: React.Ref
     tilt.rotation.x = rig.tilt0
 
     const len = Math.hypot(h, _v.y - tilt.position.y)
-    uniforms.uLen.value = len * 1.04
-    uniforms.uR1.value = uniforms.uR0.value + len * def.spread
-    const flicker = 0.94 + 0.06 * Math.sin(t * 9 + def.side * 3 + def.row)
-    uniforms.uIntensity.value = def.intensity * rig.appear * flicker
-    ;(rig.glow.material as THREE.MeshBasicMaterial).opacity = 0.9 * rig.appear
+    uniforms.uLen.value = len * 1.06
+    uniforms.uR1.value = uniforms.uR0.value + len * (def.red ? 0.07 : 0.11)
+    const flicker = 0.94 + 0.06 * Math.sin(t * 9 + slot * 2.3)
+    uniforms.uIntensity.value = (def.red ? 0.62 : 0.34) * rig.appear * flicker
+    rig.glowMat.opacity = 0.9 * rig.appear
   })
 
   return (
-    <group ref={root} position={[x, y, 0.4]} rotation={[0, def.yaw, def.row === 1 ? Math.PI : 0]} scale={s}>
+    <group ref={root} position={[x, y, 0.4]} rotation={[0, def.yaw, Math.PI]} scale={s}>
       <group scale={rig.k}>
         <primitive object={rig.scene} position={rig.offset} />
       </group>
@@ -193,12 +197,29 @@ function Fixture({ def, pointer, target }: { def: FixtureDef; pointer: React.Ref
   )
 }
 
-function Rig({ pointer, onAim }: { pointer: React.RefObject<Pointer>; onAim?: (x: number, y: number) => void }) {
-  const group = useRef<THREE.Group>(null!)
+function Rig({ pointer, aimY }: { pointer: React.RefObject<Pointer>; aimY: number }) {
   const viewport = useThree((s) => s.viewport)
+  const widthPx = useThree((s) => s.size.width)
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
-  const target = useMemo(() => new THREE.Vector3(0, 0, -1.2), [])
+  const target = useMemo(() => new THREE.Vector3(0, 0, AIM_Z), [])
+  const count = fixtureCount(widthPx)
+
+  const fixtures = useMemo<FixtureDef[]>(
+    () =>
+      Array.from({ length: count }, (_, i) => {
+        const red = i % 3 === 1
+        return {
+          model: MODELS[i % MODELS.length],
+          color: red ? RED : WHITE[i % 2],
+          red,
+          yaw: (i % 2 ? -1 : 1) * 0.35,
+          slot: i,
+          count,
+        }
+      }),
+    [count],
+  )
 
   useEffect(() => {
     const pmrem = new THREE.PMREMGenerator(gl)
@@ -213,25 +234,24 @@ function Rig({ pointer, onAim }: { pointer: React.RefObject<Pointer>; onAim?: (x
 
   useFrame((_, dt) => {
     const p = pointer.current
-    const idle = performance.now() - p.at > 2600
+    const live = performance.now() - p.at <= 2600
     const ease = 1 - Math.exp(-dt * 3)
-    const px = idle ? 0 : p.x
-    const py = idle ? 0 : p.y
-    // lampy śledzą kursor w okolicy logo; sama belka stoi w miejscu, żeby nic nie wychodziło poza kadr canvasu
-    target.x += (px * viewport.width * 0.12 - target.x) * ease
-    // w dół cel prawie się nie rusza: pod logo są przyciski, wiązki mają je omijać
-    target.y += (py * viewport.height * (py > 0 ? 0.14 : 0.03) - target.y) * ease
-    onAim?.(target.x / viewport.width, target.y / viewport.height)
+    const px = live ? p.x : 0
+    const py = live ? p.y : 0
+    // lampy śledzą kursor w okolicy logo; belka stoi w miejscu, więc nic nie wychodzi poza kadr
+    target.x += (px * viewport.width * 0.12 * AIM_K - target.x) * ease
+    target.y += ((aimY + py * 0.04) * viewport.height * AIM_K - target.y) * ease
   })
 
+  const s = fixtureSize(viewport, count)
   return (
-    <group ref={group}>
-      <mesh position={[0, trussY(viewport), 0.4]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[fixtureSize(viewport) * 0.045, fixtureSize(viewport) * 0.045, viewport.width * 1.4, 24]} />
-        <meshStandardMaterial color="#1b1b1d" metalness={0.9} roughness={0.32} />
+    <group>
+      <mesh position={[0, trussY(viewport, count), 0.4]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[s * 0.05, s * 0.05, viewport.width * 1.3, 20]} />
+        <meshStandardMaterial color="#5b5b60" metalness={0.95} roughness={0.28} envMapIntensity={1.8} />
       </mesh>
-      {FIXTURES.map((def) => (
-        <Suspense key={def.model} fallback={null}>
+      {fixtures.map((def) => (
+        <Suspense key={`${count}-${def.slot}`} fallback={null}>
           <Fixture def={def} pointer={pointer} target={target} />
         </Suspense>
       ))}
@@ -242,24 +262,27 @@ function Rig({ pointer, onAim }: { pointer: React.RefObject<Pointer>; onAim?: (x
 export default function Stage3D({
   pointer,
   active,
-  onAim,
+  aimY,
 }: {
   pointer: React.RefObject<Pointer>
   active: boolean
-  onAim?: (x: number, y: number) => void
+  /** środek logo względem środka kadru, w ułamku wysokości (dodatnie = wyżej) */
+  aimY: number
 }) {
   return (
     <Canvas
       frameloop={active ? 'always' : 'never'}
-      dpr={[1, 1.75]}
-      camera={{ fov: 26, position: [0, 0, 9], near: 0.1, far: 40 }}
+      dpr={[1, 1.6]}
+      camera={{ fov: 26, position: [0, 0, CAM_Z], near: 0.1, far: 40 }}
       gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
       style={{ pointerEvents: 'none' }}
     >
-      <ambientLight intensity={0.35} />
-      <directionalLight position={[2, 4, 6]} intensity={2.2} />
-      <directionalLight position={[-5, -1, 3]} intensity={1.1} color="#ff3b42" />
-      <Rig pointer={pointer} onAim={onAim} />
+      {/* ciemne obudowy na ciemnym tle: mocne światło z przodu + czerwona kontra, żeby bryły się odcinały */}
+      <ambientLight intensity={0.7} />
+      <directionalLight position={[0, 2, 8]} intensity={3.2} />
+      <directionalLight position={[-6, -4, 3]} intensity={2.4} color="#ff3b42" />
+      <directionalLight position={[6, -4, 3]} intensity={1.6} color="#dfe8ff" />
+      <Rig pointer={pointer} aimY={aimY} />
     </Canvas>
   )
 }

@@ -33,8 +33,8 @@ export function SectionHead({ title, sub, to, more }: { title: ReactNode; sub?: 
   return (
     <div className="shead rv">
       <div>
+        {sub && <p className="eyebrow">{sub}</p>}
         <h2 className="shead__title">{title}</h2>
-        {sub && <p className="shead__sub">{sub}</p>}
       </div>
       {to && (
         <Link className="more" to={to}>
