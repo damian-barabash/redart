@@ -18,3 +18,6 @@ createRoot(document.getElementById('root')!).render(
     </BrowserRouter>
   </StrictMode>,
 )
+
+// zasłona z index.html schodzi, gdy aplikacja jest wyrenderowana i fonty są wczytane
+document.fonts.ready.then(() => requestAnimationFrame(() => (window as unknown as { __appReady?: () => void }).__appReady?.()))

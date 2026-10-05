@@ -150,6 +150,11 @@ em {
   opacity: 1;
   transform: none;
 }
+/* pod preloaderem nic się jeszcze nie odsłania — wejście hero startuje razem z podniesieniem zasłony */
+html.is-loading .rv.in {
+  opacity: 0;
+  transform: translateY(22px);
+}
 @media (prefers-reduced-motion: reduce) {
   .rv {
     opacity: 1;
